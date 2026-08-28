@@ -1,0 +1,10 @@
+streamlit==1.37.0
+pandas==2.2.2
+numpy==1.26.4
+sentence-transformers==3.0.1
+faiss-cpu==1.8.0
+scikit-learn==1.5.1
+
+# Optional — only needed if you enable LLM-based explanations (see README)
+anthropic==0.34.2
+openai==1.43.0
