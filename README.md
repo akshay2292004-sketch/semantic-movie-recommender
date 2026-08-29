@@ -49,7 +49,7 @@ flowchart TD
     subgraph query [" Query time — per request "]
         F[User query or<br/>selected movie]
         G[Streamlit app<br/>recommender.py: embed + search]
-        H[Ranked results + "why"]
+        H[Ranked results + why]
         F --> G
         D --> G
         E --> G
