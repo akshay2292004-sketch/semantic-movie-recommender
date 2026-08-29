@@ -207,12 +207,53 @@ ensure `data/movies.index` + `data/movies_meta.parquet` are committed
 (or regenerate them via `build_index.py` in a startup script).
 
 ## Bonus: Comparison to Netflix's "More Like This"
-- **Similarities**: both surface content-similar items and explain relevance.
-- **Differences**: Netflix blends collaborative signals (millions of users'
-  watch history) and rich metadata (cast, director, visual features); this
-  project uses only title/genre/tags with no user-behavior data.
-- **Current limitations**: no personalization, no plot understanding, no
-  visual/audio features.
-- **What I'd build next**: ingest plot summaries, add a lightweight
-  collaborative filtering layer, and personalize via a user's liked-movie
-  embedding average.
+
+Netflix's "More Like This" is the closest real-world analogue to what this
+project builds, so it's a useful benchmark for what a production system adds
+on top of a content-based baseline.
+
+### Similarities
+- Both surface a ranked list of content-similar items in response to a seed
+  (a title the user picked, in Netflix's case; a title or free-text query,
+  in this project's).
+- Both attach a lightweight rationale to each result — Netflix's row titles
+  ("Because you watched X"), this project's per-result "why" explanation.
+- Both are designed to run in real time against a precomputed similarity
+  structure rather than recomputing from scratch per request — Netflix uses
+  precomputed embeddings/clusters, this project uses a precomputed FAISS
+  index built offline by `build_index.py`.
+
+### Differences
+| | This project | Netflix "More Like This" |
+|---|---|---|
+| Signal | Item content only (title, genres, tags) | Collaborative signal from hundreds of millions of viewing sessions, blended with content metadata |
+| Personalization | None — same query gives the same results for everyone | Heavily personalized — same title produces different rows per account based on viewing history |
+| Metadata depth | Title, genre, user tags | Cast, director, visual/audio features, plot, engagement signals, A/B-tested row placement |
+| Cold start | Handled natively — a brand-new title with just a title and genre still embeds and retrieves reasonably | Also handled, but blends in collaborative signal as soon as any viewing data exists |
+| Explanation | Rule-based genre/keyword overlap (or optional LLM call) | Implicit — no exposed "why," the row placement itself is the signal |
+| Scale | ~9,700 movies, exact search (`IndexFlatIP`) | Hundreds of thousands of titles, approximate search across huge embedding spaces |
+
+### Current limitations
+- No personalization: two different users typing the same query get
+  identical results, since nothing in the pipeline stores or uses per-user
+  history.
+- No collaborative signal: the system can't learn "people who liked X also
+  liked Y" — it can only reason about what a title *is*, not how people
+  responded to it.
+- Shallow content signal: without plot summaries, the embeddings are built
+  from title + genre + tags only, so two tonally different movies that
+  happen to share genre tags can rank close together (see the "sad" query
+  failure case in Section 11).
+
+### What I'd build next
+1. **Plot summaries in the embedding text** (e.g. via the TMDB API) — the
+   single highest-leverage change, since it's the main gap versus Netflix's
+   richer metadata and would directly address the ambiguous-query failure
+   mode.
+2. **A lightweight collaborative layer** — even a simple item-item
+   co-occurrence signal from MovieLens's own ratings.csv (unused in the
+   current version) blended with the semantic score, to start closing the
+   personalization gap without needing production-scale user data.
+3. **Per-user personalization** — store a session's liked movies and use
+   the average of their embeddings as an implicit query vector, so repeat
+   use of the app starts to feel tailored rather than stateless.
