@@ -28,17 +28,33 @@ This is a **retrieval-augmented** recommender:
    Retrieve → Augment prompt → Generate — without changing the retrieval logic.
 
 ## 4. System Architecture
-```
- ┌────────────────┐     one-time      ┌──────────────────┐
- │ movies.csv      │ ───────────────► │ build_index.py    │
- │ tags.csv        │                  │ (embed + FAISS)   │
- └────────────────┘                   └─────────┬─────────┘
-                                                  │ movies.index
-                                                  │ movies_meta.parquet
-                                                  ▼
-                              ┌───────────────────────────────┐
- User query/selection ──────►│ Streamlit app (recommender.py) │──► Ranked list + "why"
-                              └───────────────────────────────┘
+
+```mermaid
+flowchart TD
+    subgraph offline [" Offline — run once "]
+        A[movies.csv<br/>title, genres]
+        B[tags.csv<br/>user tags, optional]
+        C[build_index.py<br/>embed + build FAISS index]
+        A --> C
+        B --> C
+    end
+
+    subgraph storage [" Stored artifacts "]
+        D[(movies.index<br/>FAISS vectors)]
+        E[(movies_meta.parquet<br/>title, genres, doc_text)]
+        C --> D
+        C --> E
+    end
+
+    subgraph query [" Query time — per request "]
+        F[User query or<br/>selected movie]
+        G[Streamlit app<br/>recommender.py: embed + search]
+        H[Ranked results + "why"]
+        F --> G
+        D --> G
+        E --> G
+        G --> H
+    end
 ```
 
 ## 5. Recommendation Methodology
@@ -77,15 +93,49 @@ into `./data/`, then run `python build_index.py` once.
   exact search is still fast.
 
 ## 10. Evaluation Methodology
+
+### Why genre overlap as a proxy
 Because this is content-based with no held-out user interaction data for
 this dataset subset, standard ranking metrics (Precision@K, NDCG) are
 approximated using **genre overlap as a relevance proxy**: a recommended
 movie is considered "relevant" if it shares at least one genre with the
-query movie. This is reported alongside qualitative test cases below.
+query movie. This is a weak proxy — two movies can share a genre tag
+without being similar in tone or plot — but it's a reasonable stand-in
+given no real user feedback signal exists for this dataset subset, and it
+is reported alongside the qualitative success/failure cases below rather
+than as a replacement for them.
+
+### Results
+
+Measured using `search_by_movie()` ("more like this") against 8 well-known
+movies, using each movie's own catalog embedding as the query and the
+genre-overlap proxy for relevance:
+
+| Query movie | Precision@10 |
+|---|---|
+| Inception (2010) | 1.00 |
+| Toy Story (1995) | 1.00 |
+| Titanic (1997) | 0.90 |
+| Forrest Gump (1994) | 1.00 |
+| Pulp Fiction (1994) | 1.00 |
+| Jurassic Park (1993) | 1.00 |
+| The Dark Knight | 1.00 |
+| Finding Nemo (2003) | 1.00 |
+
+**Mean Precision@10 (genre-overlap proxy): 0.988**
+
+**FAISS search latency (mean, search-only, excludes query embedding time):
+0.86 ms**
+
+Note: the 0.86ms figure covers FAISS's nearest-neighbor search step only.
+Total end-to-end latency in the deployed app also includes the
+sentence-transformer embedding step for the query text, which typically
+adds ~5–20ms on CPU. Search latency alone confirms the index itself is not
+a bottleneck at this dataset size.
 
 Metrics tracked:
-- **Precision@10** (genre-overlap proxy)
-- **Latency** (embedding + FAISS search time per query)
+- **Precision@10** (genre-overlap proxy) — measured above
+- **Latency** (FAISS search time per query) — measured above
 - Qualitative **success/failure** case review (below)
 
 ## 11. Test Cases
